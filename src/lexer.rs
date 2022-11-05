@@ -27,17 +27,27 @@ lazy_static! {
     };
 }
 
+struct LexerState {
+    start: usize,
+    current: usize,
+    line: usize,
+}
+
+impl LexerState {
+    pub fn new() -> Self {
+        LexerState {
+            start: 0,
+            current: 0,
+            line: 0,
+        }
+    }
+}
+
 pub struct Lexer<'a> {
     source: &'a str,
     tokens: Vec<Token<'a>>,
     logger: &'a mut dyn ErrorReporter,
     state: LexerState,
-}
-
-struct LexerState {
-    start: usize,
-    current: usize,
-    line: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -62,11 +72,11 @@ impl<'a> Lexer<'a> {
         &self.tokens
     }
 
-    fn is_at_end(&self) -> bool {
+    pub(crate) fn is_at_end(&self) -> bool {
         self.state.current >= self.source.len()
     }
 
-    fn scan_token(&mut self) {
+    pub(crate) fn scan_token(&mut self) {
         let c = self.advance();
         match c {
             '(' => self.add_token(TokenType::LeftParen),
@@ -134,7 +144,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn advance(&mut self) -> char {
+    pub(crate) fn advance(&mut self) -> char {
         let c = self.source.chars().nth(self.state.current).expect(&format!(
             "Unexpected error in the lexer reading char @ index {}",
             self.state.current
@@ -143,12 +153,12 @@ impl<'a> Lexer<'a> {
         c
     }
 
-    fn add_token(&mut self, ttype: TokenType<'a>) {
+    pub(crate) fn add_token(&mut self, ttype: TokenType<'a>) {
         let text = &self.source[self.state.start..self.state.current];
         self.tokens.push(Token::new(ttype, text, self.state.line));
     }
 
-    fn match_next(&mut self, expected_char: char) -> bool {
+    pub(crate) fn match_next(&mut self, expected_char: char) -> bool {
         if self.is_at_end() {
             return false;
         }
@@ -165,7 +175,7 @@ impl<'a> Lexer<'a> {
         true
     }
 
-    fn peek(&self) -> char {
+    pub(crate) fn peek(&self) -> char {
         if self.is_at_end() {
             '\0'
         } else {
@@ -176,9 +186,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek_next(&mut self) -> char {
+    pub(crate) fn peek_next(&mut self) -> char {
         if self.state.current + 1 >= self.source.len() {
-            '0'
+            '\0'
         } else {
             self.source
                 .chars()
@@ -190,7 +200,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn scan_string(&mut self) {
+    pub(crate) fn scan_string(&mut self) {
         while self.peek() != '"' && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.state.line += 1;
@@ -206,7 +216,7 @@ impl<'a> Lexer<'a> {
         self.add_token(TokenType::String(str_value));
     }
 
-    fn scan_number(&mut self) {
+    pub(crate) fn scan_number(&mut self) {
         while self.peek().is_digit(10) {
             self.advance();
         }
@@ -229,7 +239,7 @@ impl<'a> Lexer<'a> {
         self.add_token(TokenType::Number(value))
     }
 
-    fn scan_identifier(&mut self) {
+    pub(crate) fn scan_identifier(&mut self) {
         while self.peek().is_alphabetic() || self.peek().is_alphanumeric() {
             self.advance();
         }
@@ -243,12 +253,24 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl LexerState {
-    pub fn new() -> Self {
-        LexerState {
-            start: 0,
-            current: 0,
-            line: 0,
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::*;
+
+    fn setup<'a>(err_reporter: &'a mut dyn ErrorReporter) -> Lexer<'a> {
+        let mut lex = Lexer::new("1", err_reporter);
+        lex
+    }
+
+    #[test]
+    fn scan_integer() {
+        let mut err_reporter = MockErrorReporter::new();
+        let mut lex = Lexer::new("1", &mut err_reporter);
+
+        let tokens = lex.scan();
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].lexeme, "1");
+        assert!(matches!(tokens[0].ttype, TokenType::Number(1.0)));
     }
 }
