@@ -1,8 +1,8 @@
-#[cfg(test)]
-use mockall::{automock, mock, predicate::*};
-#[cfg_attr(test, automock)]
-pub trait ErrorReporter {
-    fn report(&mut self, line: usize, location: &str, message: &str);
+use crate::ast::Ctx;
 
-    fn error(&mut self, line: usize, message: &str);
+pub fn make_error_msg(ctx: &Ctx, error_reason: String) -> String {
+    format!(
+        "File \"<{}>\", line {}, in <{}>\n    {}",
+        ctx.file, ctx.line, ctx.module, error_reason
+    )
 }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::common::ErrorReporter;
 use crate::token::{Token, TokenType};
 
 lazy_static! {
@@ -46,16 +45,14 @@ impl LexerState {
 pub struct Lexer<'a> {
     source: &'a str,
     tokens: Vec<Token<'a>>,
-    logger: &'a mut dyn ErrorReporter,
     state: LexerState,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str, logger: &'a mut dyn ErrorReporter) -> Self {
+    pub fn new(source: &'a str) -> Self {
         Lexer {
             source,
             tokens: vec![],
-            logger,
             state: LexerState::new(),
         }
     }
@@ -138,9 +135,10 @@ impl<'a> Lexer<'a> {
             '\n' => self.state.line += 1,
             // Ignore whitespace
             ' ' | '\r' | '\t' => (),
-            _ => self
-                .logger
-                .error(self.state.line, &format!("Unexpected character {}", c)),
+            _ => println!("[TODO make this a Err(..)] -- Unexpected character {}", c)
+            // _ => self
+            //     .logger
+            //     .error(self.state.line, &format!("Unexpected character {}", c)),
         }
     }
 
@@ -171,7 +169,7 @@ impl<'a> Lexer<'a> {
             return false;
         }
 
-        self.state.current;
+        self.state.current += 1;
         true
     }
 
@@ -256,21 +254,24 @@ impl<'a> Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::*;
-
-    fn setup<'a>(err_reporter: &'a mut dyn ErrorReporter) -> Lexer<'a> {
-        let mut lex = Lexer::new("1", err_reporter);
-        lex
-    }
 
     #[test]
     fn scan_integer() {
-        let mut err_reporter = MockErrorReporter::new();
-        let mut lex = Lexer::new("1", &mut err_reporter);
+        let mut lex = Lexer::new("1");
 
         let tokens = lex.scan();
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].lexeme, "1");
         assert!(matches!(tokens[0].ttype, TokenType::Number(1.0)));
+    }
+
+    #[test]
+    fn t_a() {
+        assert!(true);
+    }
+
+    #[test]
+    fn t_b() {
+        assert!(false);
     }
 }

@@ -6,35 +6,14 @@ use std::io::Write;
 
 mod ast;
 mod common;
+mod interp;
 mod lexer;
+mod parser;
 mod token;
+mod value;
 
-struct UvlInterpreter {
-    had_error: bool,
-}
-
-impl UvlInterpreter {
-    pub fn new() -> UvlInterpreter {
-        UvlInterpreter { had_error: false }
-    }
-
-    pub fn run(&mut self, source: &str) {
-        let mut lexer = crate::lexer::Lexer::new(source, self);
-        let tokens = lexer.scan();
-        println!("{:?}", tokens);
-    }
-}
-
-impl common::ErrorReporter for UvlInterpreter {
-    fn report(&mut self, line: usize, location: &str, message: &str) {
-        println!("[line {}] Error {}: {}", line, location, message);
-        self.had_error = true;
-    }
-
-    fn error(&mut self, line: usize, message: &str) {
-        self.report(line, "", message);
-    }
-}
+use interp::UvlInterpreter;
+use value::UvlError;
 
 fn run_file(file_path: &str) {
     let source_file = match std::fs::read_to_string(file_path) {
@@ -46,10 +25,13 @@ fn run_file(file_path: &str) {
     };
 
     let mut interp = UvlInterpreter::new();
-    interp.run(&source_file);
+    if let Err(err) = interp.run(&source_file) {
+        println!("{}", err);
 
-    if interp.had_error {
-        std::process::exit(65);
+        match err {
+            UvlError::RuntimeError(_) => std::process::exit(70),
+            _ => std::process::exit(65),
+        }
     }
 }
 
@@ -59,14 +41,18 @@ fn run_prompt() {
 
     let mut interp = UvlInterpreter::new();
     loop {
-        print!("> ");
+        print!("::> ");
         std::io::stdout().flush().unwrap();
 
         match stdin.read_line(&mut line_buffer) {
             Ok(_) => {
-                interp.run(&line_buffer);
+                match interp.run(&line_buffer) {
+                    Ok(value) => println!("{}", value),
+                    Err(err) => println!("{}", err),
+                }
+
                 line_buffer.clear();
-                interp.had_error = false;
+                interp.reset();
             }
             Err(_) => {
                 std::process::exit(65);
