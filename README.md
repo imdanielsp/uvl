@@ -13,15 +13,15 @@ REPL
 
 ```bash
 $ cargo run
-$ ::> 5 + 12
+::> 5 + 12
 17
-$ ::> 5.12 + 12.5
+::> 5.12 + 12.5
 17.62
-$ ::> "Hello"
+::> "Hello"
 "Hello"
-$ ::> "Hello " + "World!"
+::> "Hello " + "World!"
 "Hello World!"
-$ ::> "a string" + 123
+::> "a string" + 123
 File "<main.uvl>", line 0, in <root>
     Operator '+' is not supported for "a string" of type String and 123 of type Number
 ::> 5/0
