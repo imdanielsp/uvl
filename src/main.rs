@@ -6,6 +6,7 @@ use std::io::Write;
 
 mod ast;
 mod common;
+mod envr;
 mod interp;
 mod lexer;
 mod parser;

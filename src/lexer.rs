@@ -13,13 +13,14 @@ lazy_static! {
         keywords.insert("fun", TokenType::Fun);
         keywords.insert("if", TokenType::If);
         keywords.insert("nil", TokenType::Nil);
+        keywords.insert("mut", TokenType::Mut);
         keywords.insert("or", TokenType::Or);
-        keywords.insert("print", TokenType::Print);
+        keywords.insert("println", TokenType::PrintLn);
         keywords.insert("return", TokenType::Return);
         keywords.insert("super", TokenType::Super);
         keywords.insert("this", TokenType::This);
         keywords.insert("true", TokenType::True);
-        keywords.insert("var", TokenType::Let);
+        keywords.insert("let", TokenType::Let);
         keywords.insert("const", TokenType::Const);
         keywords.insert("while", TokenType::While);
         keywords

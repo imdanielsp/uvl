@@ -9,6 +9,7 @@ pub enum UvlError {
     RuntimeError(String),
     UnsupportedOperator(String),
     ParserError(String),
+    NameError(String),
 }
 
 impl std::fmt::Display for UvlError {
@@ -17,6 +18,7 @@ impl std::fmt::Display for UvlError {
             Self::RuntimeError(s) => write!(f, "{}", s),
             Self::ParserError(s) => write!(f, "{}", s),
             Self::UnsupportedOperator(s) => write!(f, "{}", s),
+            Self::NameError(s) => write!(f, "{}", s),
         }
     }
 }

@@ -1,8 +1,9 @@
-use crate::ast::{Ctx, Expr, Stmt};
+use crate::ast::{Ctx, Expr, Mutable, Stmt};
 use crate::token::{Token, TokenType};
 
 type ParserResult<T> = Result<T, String>;
 
+#[derive(Debug)]
 struct ParserState {
     current: usize,
 }
@@ -26,70 +27,142 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> ParserResult<Expr> {
-        self.expr()
-    }
-
-    // todo!()
-    // pub fn parse(&mut self) -> ParserResult<Vec<Stmt>> {
-    //     let mut stmts = Vec::<Stmt>::new();
-    //     while !self.is_at_end() {
-    //         match self.statement() {
-    //             Ok(stmt) => stmts.push(stmt),
-    //             Err(e) => return Err(e),
-    //         }
-    //     }
-    //     Ok(stmts)
-    // }
-
-    fn synchronize(&mut self) {
-        self.advance();
-
+    pub fn parse(&mut self) -> ParserResult<Vec<Stmt<'a>>> {
+        let mut stmts = Vec::<Stmt<'a>>::new();
         while !self.is_at_end() {
-            match self.previous().ttype {
-                TokenType::Semicolon => {
-                    return;
-                }
-                _ => (),
-            }
-
-            match self.peek().ttype {
-                TokenType::Class
-                | TokenType::Fun
-                | TokenType::Let
-                | TokenType::For
-                | TokenType::If
-                | TokenType::While
-                | TokenType::Print
-                | TokenType::Return => {
-                    return;
-                }
-                _ => {
-                    self.advance();
-                }
+            match self.statement() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(e) => return Err(e),
             }
         }
+
+        Ok(stmts)
     }
 
-    fn statement(&mut self) -> ParserResult<Stmt> {
-        if self.match_ttokens(&vec![&TokenType::Print]) {
+    fn statement(&mut self) -> ParserResult<Stmt<'a>> {
+        if self.match_ttokens(&vec![&TokenType::PrintLn]) {
             return self.print_statement();
+        }
+
+        if self.match_ttokens(&vec![&TokenType::Let]) {
+            return self.let_statement();
         }
 
         self.expression_statement()
     }
 
-    fn print_statement(&mut self) -> ParserResult<Stmt> {
-        Err("TODO".to_string())
+    fn print_statement(&mut self) -> ParserResult<Stmt<'a>> {
+        match self.expr() {
+            Ok(expr) => {
+                if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                    Ok(Stmt::PrintLn(
+                        Ctx::from_token(self.previous()),
+                        Box::new(expr),
+                    ))
+                } else {
+                    Err(Parser::make_parse_error_message(
+                        self.peek(),
+                        "Expect ';' after statement",
+                    ))
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
-    fn expression_statement(&mut self) -> ParserResult<Stmt> {
-        Err("TODO".to_string())
+    fn let_statement(&mut self) -> ParserResult<Stmt<'a>> {
+        let is_mutable = if self.peek().ttype == TokenType::Mut {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
+        if self.peek().ttype == TokenType::Identifier {
+            let identifier = self.advance().clone();
+
+            if self.match_ttokens(&vec![&TokenType::Equal]) {
+                match self.expr() {
+                    Ok(expr) => {
+                        if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                            Ok(Stmt::Let(
+                                Ctx::from_token(&identifier),
+                                identifier,
+                                Mutable(is_mutable),
+                                Box::new(expr),
+                            ))
+                        } else {
+                            Err(Parser::make_parse_error_message(
+                                self.peek(),
+                                "Expect ';' after expression",
+                            ))
+                        }
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                Err(Parser::make_parse_error_message(
+                    self.peek(),
+                    "Expect initialization",
+                ))
+            }
+        } else {
+            Err(Parser::make_parse_error_message(
+                self.peek(),
+                "Expect identifier after let",
+            ))
+        }
     }
 
-    // TODO: this is temp public
-    pub fn expr(&mut self) -> ParserResult<Expr<'a>> {
-        self.equality()
+    fn expression_statement(&mut self) -> ParserResult<Stmt<'a>> {
+        match self.expr() {
+            Ok(expr) => {
+                if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                    Ok(Stmt::Expression(
+                        Ctx::from_token(self.previous()),
+                        Box::new(expr),
+                    ))
+                } else {
+                    Err(Parser::make_parse_error_message(
+                        self.peek(),
+                        "Expect ';' after expression",
+                    ))
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn expr(&mut self) -> ParserResult<Expr<'a>> {
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> ParserResult<Expr<'a>> {
+        let expr = match self.equality() {
+            Ok(expr) => expr,
+            Err(e) => return Err(e),
+        };
+
+        if self.match_ttokens(&vec![&TokenType::Equal]) {
+            let toke_eq = self.previous().clone();
+            let value = match self.assignment() {
+                Ok(value) => value,
+                Err(e) => return Err(e),
+            };
+
+            match expr {
+                Expr::Variable(ctx, token) => {
+                    let name = token.clone();
+                    Ok(Expr::Assign(ctx.clone(), name, Box::new(value.clone())))
+                }
+                _ => Err(Parser::make_parse_error_message(
+                    &toke_eq,
+                    "Invalid assignment value",
+                )),
+            }
+        } else {
+            Ok(expr)
+        }
     }
 
     fn equality(&mut self) -> ParserResult<Expr<'a>> {
@@ -198,37 +271,34 @@ impl<'a> Parser<'a> {
 
     fn primary(&mut self) -> Result<Expr<'a>, String> {
         match self.peek().ttype {
-            TokenType::False | TokenType::True => {
-                self.advance();
+            TokenType::False | TokenType::True | TokenType::Nil => {
+                let token = self.advance();
                 Ok(Expr::Literal(
-                    Ctx::from_token(self.previous()),
+                    Ctx::from_token(token),
                     self.previous().clone(),
                 ))
             }
             TokenType::Number(_) => {
-                self.advance();
+                let token = self.advance();
                 Ok(Expr::Literal(
-                    Ctx::from_token(self.previous()),
+                    Ctx::from_token(token),
                     self.previous().clone(),
                 ))
             }
             TokenType::String(_) => {
-                self.advance();
+                let token = self.advance();
                 Ok(Expr::Literal(
-                    Ctx::from_token(self.previous()),
+                    Ctx::from_token(token),
                     self.previous().clone(),
                 ))
             }
             TokenType::LeftParen => {
-                self.advance();
+                let token = self.advance().clone();
 
                 match self.expr() {
                     Ok(expr) => {
                         if self.match_ttokens(&vec![&TokenType::RightParen]) {
-                            Ok(Expr::Grouping(
-                                Ctx::from_token(self.previous()),
-                                Box::new(expr),
-                            ))
+                            Ok(Expr::Grouping(Ctx::from_token(&token), Box::new(expr)))
                         } else {
                             Err(Parser::make_parse_error_message(
                                 self.peek(),
@@ -239,9 +309,13 @@ impl<'a> Parser<'a> {
                     Err(e) => Err(e),
                 }
             }
+            TokenType::Identifier => {
+                let token = self.advance();
+                Ok(Expr::Variable(Ctx::from_token(token), token.clone()))
+            }
             _ => Err(Parser::make_parse_error_message(
                 self.peek(),
-                "Expect expression.",
+                "Expect expression",
             )),
         }
     }
@@ -278,17 +352,46 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_end(&self) -> bool {
-        self.tokens.len() == self.state.current
+        self.peek().ttype == TokenType::Eof
     }
 
     fn peek(&self) -> &Token<'a> {
         &self.tokens[self.state.current]
     }
 
+    fn synchronize(&mut self) {
+        self.advance();
+
+        while !self.is_at_end() {
+            match self.previous().ttype {
+                TokenType::Semicolon => {
+                    return;
+                }
+                _ => (),
+            }
+
+            match self.peek().ttype {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::Let
+                | TokenType::For
+                | TokenType::If
+                | TokenType::While
+                | TokenType::PrintLn
+                | TokenType::Return => {
+                    return;
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
     fn make_parse_error_message(token: &Token<'a>, message: &str) -> String {
         match token.ttype {
             TokenType::Eof => {
-                format!("[line {}] Error {}: {}", token.line, " at end", message)
+                format!("[line {}] Error: {} at end", token.line, message)
             }
             _ => format!(
                 "[line {}] Error at '{}': {}",

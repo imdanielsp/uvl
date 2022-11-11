@@ -27,6 +27,20 @@ File "<main.uvl>", line 0, in <root>
 ::> 5/0
 File "<main.uvl>", line 0, in <root>
     Division by zero: 5/0
+
+# Assignment and immutability
+::> let n = 1;
+::> n = 2;
+File "<main.uvl>", line 0, in <root>
+    Name 'n' is immutable
+
+# Opt-in mutability
+::> let mut p = 5;
+::> println p;
+5
+::> p = 1;
+::> println p;
+1
 ```
 
 File

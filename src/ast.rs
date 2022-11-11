@@ -1,6 +1,6 @@
-use crate::token::{Token, TokenType};
+use crate::token::Token;
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Ctx {
     pub file: String,
     pub line: usize,
@@ -8,10 +8,6 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(file: String, line: usize, module: String) -> Self {
-        Ctx { file, line, module }
-    }
-
     pub fn from_token(token: &Token) -> Self {
         Ctx {
             file: "main.uvl".to_string(),
@@ -21,33 +17,24 @@ impl Ctx {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Expr<'a> {
     Binary(Ctx, Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
     Grouping(Ctx, Box<Expr<'a>>),
     Literal(Ctx, Token<'a>),
     Unary(Ctx, Token<'a>, Box<Expr<'a>>),
+    Variable(Ctx, Token<'a>),
+    Assign(Ctx, Token<'a>, Box<Expr<'a>>),
 }
 
+#[derive(Debug, Clone)]
+pub struct Mutable(pub bool);
+
+#[derive(Debug, Clone)]
 pub enum Stmt<'a> {
-    Expression(Ctx, Expr<'a>),
-    Print(Ctx, Expr<'a>),
-}
-
-pub fn to_string<'a>(expr: &Expr<'a>) -> String {
-    match expr {
-        Expr::Binary(_, left, op, right) => {
-            format!("({} {} {})", op.lexeme, to_string(left), to_string(right))
-        }
-        Expr::Grouping(_, e) => format!("(group {})", to_string(e)),
-        Expr::Literal(_, token) => match token.ttype {
-            TokenType::String(s) => s.to_string(),
-            TokenType::Number(n) => n.to_string(),
-            TokenType::True => "true".to_string(),
-            TokenType::False => "false".to_string(),
-            _ => "null".to_string(),
-        },
-        Expr::Unary(_, op, e) => format!("({} {})", op.lexeme, to_string(e)),
-    }
+    Expression(Ctx, Box<Expr<'a>>),
+    PrintLn(Ctx, Box<Expr<'a>>),
+    Let(Ctx, Token<'a>, Mutable, Box<Expr<'a>>),
 }
 
 #[cfg(test)]
