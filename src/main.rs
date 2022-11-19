@@ -25,8 +25,8 @@ fn run_file(file_path: &str) {
         }
     };
 
-    let mut interp = UvlInterpreter::new();
-    if let Err(err) = interp.run(&source_file) {
+    let mut interp = UvlInterpreter::new(false);
+    if let Err(err) = interp.run(file_path, &source_file) {
         println!("{}", err);
 
         match err {
@@ -40,15 +40,18 @@ fn run_prompt() {
     let mut line_buffer = String::new();
     let stdin = std::io::stdin();
 
-    let mut interp = UvlInterpreter::new();
+    let mut interp = UvlInterpreter::new(true);
     loop {
         print!("::> ");
         std::io::stdout().flush().unwrap();
 
         match stdin.read_line(&mut line_buffer) {
             Ok(_) => {
-                match interp.run(&line_buffer) {
-                    Ok(value) => println!("{}", value),
+                match interp.run("stdin", &line_buffer) {
+                    Ok(value) => match value {
+                        value::UvlValue::Nil(_) => (),
+                        _ => println!("{}", value),
+                    },
                     Err(err) => println!("{}", err),
                 }
 

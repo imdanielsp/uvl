@@ -5,15 +5,17 @@ use crate::token::{Token, TokenType};
 use crate::value::{UvlError, UvlResult, UvlValue};
 
 pub struct UvlInterpreter {
+    prompt_mode: bool,
     had_error: bool,
-    environment: Environment,
+    environment: Box<Environment>,
 }
 
 impl UvlInterpreter {
-    pub fn new() -> UvlInterpreter {
+    pub fn new(prompt_mode: bool) -> Self {
         UvlInterpreter {
+            prompt_mode,
             had_error: false,
-            environment: Environment::new(),
+            environment: Box::new(Environment::new(None)),
         }
     }
 
@@ -21,10 +23,10 @@ impl UvlInterpreter {
         self.had_error = false;
     }
 
-    pub fn run(&mut self, source: &str) -> UvlResult {
+    pub fn run(&mut self, source_name: &str, source: &str) -> UvlResult {
         let mut lexer = crate::lexer::Lexer::new(source);
         let tokens = lexer.scan().clone();
-        let mut parser = crate::parser::Parser::new(&tokens);
+        let mut parser = crate::parser::Parser::new(&tokens, source_name, self.prompt_mode);
 
         match parser.parse() {
             Ok(stmts) => self.execute(&stmts),
@@ -33,42 +35,52 @@ impl UvlInterpreter {
     }
 
     fn execute(&mut self, stmts: &Vec<Stmt>) -> UvlResult {
-        for stmt in stmts {
-            match stmt {
-                Stmt::Expression(_, expr) => {
-                    if let Err(e) = self.eval_expr(expr) {
-                        return Err(e);
-                    }
+        if self.prompt_mode {
+            self.exec_statement(&stmts[0])
+        } else {
+            for stmt in stmts {
+                if let Err(e) = self.exec_statement(stmt) {
+                    return Err(e);
                 }
-                Stmt::PrintLn(_, expr) => {
-                    // Temporary until we get functions
-                    match self.eval_expr(expr) {
-                        Ok(val) => {
-                            if let Err(e) = self.exec_println(&val) {
-                                return Err(e);
-                            }
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-                Stmt::Let(ctx, token, is_mutable, expr) => {
-                    if self.environment.contains(token.lexeme) {
-                        return Err(UvlError::NameError(make_error_msg(
-                            ctx,
-                            format!("Name '{}' has already been declared", token.lexeme),
-                        )));
-                    }
+            }
 
-                    match self.eval_expr(expr) {
-                        Ok(val) => {
-                            self.environment.define(token.lexeme, is_mutable.0, val);
-                        }
-                        Err(e) => return Err(e),
-                    }
+            Ok(UvlValue::Nil(()))
+        }
+    }
+
+    fn exec_statement(&mut self, stmt: &Stmt) -> UvlResult {
+        match stmt {
+            Stmt::Expression(_, expr) => self.eval_expr(expr),
+            Stmt::PrintLn(_, expr) => match self.eval_expr(expr) {
+                Ok(val) => self.exec_println(&val),
+                Err(e) => Err(e),
+            },
+            Stmt::Let(_, token, is_mutable, expr) => match self.eval_expr(expr) {
+                Ok(val) => {
+                    self.environment.define(token.lexeme, is_mutable.0, val);
+                    Ok(UvlValue::Nil(()))
                 }
+                Err(e) => Err(e),
+            },
+            Stmt::Block(_, stmts) => self.exec_block(
+                &stmts,
+                Box::new(Environment::new(Some(self.environment.clone()))),
+            ),
+        }
+    }
+
+    fn exec_block(&mut self, stmts: &Vec<Box<Stmt>>, environment: Box<Environment>) -> UvlResult {
+        let prev = self.environment.clone();
+        self.environment = environment;
+
+        for stmt in stmts {
+            if let Err(e) = self.exec_statement(&stmt) {
+                self.environment = prev;
+                return Err(e);
             }
         }
 
+        self.environment = prev;
         Ok(UvlValue::Nil(()))
     }
 
@@ -107,7 +119,7 @@ impl UvlInterpreter {
                     } else {
                         match self.eval_expr(expr) {
                             Ok(val) => {
-                                self.environment.define(token.lexeme, entry.is_mutable, val);
+                                self.environment.assign(token.lexeme, val);
                                 Ok(entry.value.clone())
                             }
                             Err(e) => Err(e),

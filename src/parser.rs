@@ -15,13 +15,17 @@ impl ParserState {
 }
 
 pub struct Parser<'a> {
+    source_name: &'a str,
+    prompt_mode: bool,
     tokens: &'a Vec<Token<'a>>,
     state: ParserState,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a Vec<Token<'a>>) -> Self {
+    pub fn new(tokens: &'a Vec<Token<'a>>, source_name: &'a str, prompt_mode: bool) -> Self {
         Parser {
+            source_name,
+            prompt_mode,
             tokens,
             state: ParserState::new(),
         }
@@ -40,12 +44,16 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> ParserResult<Stmt<'a>> {
+        if self.match_ttokens(&vec![&TokenType::Let]) {
+            return self.let_statement();
+        }
+
         if self.match_ttokens(&vec![&TokenType::PrintLn]) {
             return self.print_statement();
         }
 
-        if self.match_ttokens(&vec![&TokenType::Let]) {
-            return self.let_statement();
+        if self.match_ttokens(&vec![&TokenType::LeftBrace]) {
+            return self.block_statement();
         }
 
         self.expression_statement()
@@ -54,13 +62,14 @@ impl<'a> Parser<'a> {
     fn print_statement(&mut self) -> ParserResult<Stmt<'a>> {
         match self.expr() {
             Ok(expr) => {
-                if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                if self.match_ttokens(&vec![&TokenType::Semicolon]) || self.prompt_mode {
                     Ok(Stmt::PrintLn(
                         Ctx::from_token(self.previous()),
                         Box::new(expr),
                     ))
                 } else {
                     Err(Parser::make_parse_error_message(
+                        &self,
                         self.peek(),
                         "Expect ';' after statement",
                     ))
@@ -84,7 +93,7 @@ impl<'a> Parser<'a> {
             if self.match_ttokens(&vec![&TokenType::Equal]) {
                 match self.expr() {
                     Ok(expr) => {
-                        if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                        if self.match_ttokens(&vec![&TokenType::Semicolon]) || self.prompt_mode {
                             Ok(Stmt::Let(
                                 Ctx::from_token(&identifier),
                                 identifier,
@@ -93,6 +102,7 @@ impl<'a> Parser<'a> {
                             ))
                         } else {
                             Err(Parser::make_parse_error_message(
+                                &self,
                                 self.peek(),
                                 "Expect ';' after expression",
                             ))
@@ -102,28 +112,52 @@ impl<'a> Parser<'a> {
                 }
             } else {
                 Err(Parser::make_parse_error_message(
+                    &self,
                     self.peek(),
                     "Expect initialization",
                 ))
             }
         } else {
             Err(Parser::make_parse_error_message(
+                &self,
                 self.peek(),
                 "Expect identifier after let",
             ))
         }
     }
 
+    fn block_statement(&mut self) -> ParserResult<Stmt<'a>> {
+        let mut stmts = Vec::new();
+        let ctx = Ctx::from_token(self.previous());
+        while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
+            match self.statement() {
+                Ok(stmt) => stmts.push(Box::new(stmt)),
+                Err(e) => return Err(e),
+            }
+        }
+
+        if !self.match_ttokens(&vec![&TokenType::RightBrace]) {
+            return Err(Parser::make_parse_error_message(
+                &self,
+                self.peek(),
+                "Expect '}' after block",
+            ));
+        }
+
+        Ok(Stmt::Block(ctx, stmts))
+    }
+
     fn expression_statement(&mut self) -> ParserResult<Stmt<'a>> {
         match self.expr() {
             Ok(expr) => {
-                if self.match_ttokens(&vec![&TokenType::Semicolon]) {
+                if self.match_ttokens(&vec![&TokenType::Semicolon]) || self.prompt_mode {
                     Ok(Stmt::Expression(
                         Ctx::from_token(self.previous()),
                         Box::new(expr),
                     ))
                 } else {
                     Err(Parser::make_parse_error_message(
+                        &self,
                         self.peek(),
                         "Expect ';' after expression",
                     ))
@@ -156,6 +190,7 @@ impl<'a> Parser<'a> {
                     Ok(Expr::Assign(ctx.clone(), name, Box::new(value.clone())))
                 }
                 _ => Err(Parser::make_parse_error_message(
+                    &self,
                     &toke_eq,
                     "Invalid assignment value",
                 )),
@@ -301,6 +336,7 @@ impl<'a> Parser<'a> {
                             Ok(Expr::Grouping(Ctx::from_token(&token), Box::new(expr)))
                         } else {
                             Err(Parser::make_parse_error_message(
+                                &self,
                                 self.peek(),
                                 "Expect ')' after expression",
                             ))
@@ -314,6 +350,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Variable(Ctx::from_token(token), token.clone()))
             }
             _ => Err(Parser::make_parse_error_message(
+                &self,
                 self.peek(),
                 "Expect expression",
             )),
@@ -336,7 +373,7 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        self.tokens[self.state.current].ttype == ttype.clone()
+        self.tokens[self.state.current].ttype == *ttype
     }
 
     fn advance(&mut self) -> &Token<'a> {
@@ -388,14 +425,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn make_parse_error_message(token: &Token<'a>, message: &str) -> String {
+    fn make_parse_error_message(parser: &Parser<'a>, token: &Token<'a>, message: &str) -> String {
         match token.ttype {
             TokenType::Eof => {
-                format!("[line {}] Error: {} at end", token.line, message)
+                format!(
+                    "File \"<{}>\", line {}, in <root>\n\tError: {} at end",
+                    parser.source_name, token.line, message
+                )
             }
             _ => format!(
-                "[line {}] Error at '{}': {}",
-                token.line, token.lexeme, message
+                "File \"<{}>\", line {}, in <root>\n\tError at '{}': {}",
+                parser.source_name, token.line, token.lexeme, message
             ),
         }
     }

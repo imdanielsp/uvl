@@ -35,6 +35,7 @@ pub enum Stmt<'a> {
     Expression(Ctx, Box<Expr<'a>>),
     PrintLn(Ctx, Box<Expr<'a>>),
     Let(Ctx, Token<'a>, Mutable, Box<Expr<'a>>),
+    Block(Ctx, Vec<Box<Stmt<'a>>>),
 }
 
 #[cfg(test)]
